@@ -1,7 +1,8 @@
 import socket
 import subprocess
 import re
-from time import sleep
+import time
+from colorama import init, Fore
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
@@ -29,6 +30,7 @@ if browser_choice == "2":
     driver = webdriver.Firefox(service=firefox_service)
 
 actions = ActionChains(driver)
+init()
 
 driver.get("https://www.example.com")
 
@@ -208,7 +210,7 @@ def execute(data, placeholders, driver, conn):
                         if should_quit:
                             conn.send(b"AUTO_DONE\n")
                             return True
-                        sleep(0.3)
+                        time.sleep(0.3)
             # Signal end of AUTO block
             conn.send(b"AUTO_DONE\n")
         except Exception as e:
@@ -306,11 +308,42 @@ def execute(data, placeholders, driver, conn):
     elif data.startswith("WAIT "):
         try:
             seconds = int(data[5:].strip())
-            sleep(seconds)
+            time.sleep(seconds)
             driver.implicitly_wait(seconds)
             conn.send(b"OK\n")
         except ValueError:
             conn.send(b"ERROR: Invalid WAIT command, must be an integer\n")
+    
+    # UNTIL command
+    elif data.startswith("UNTIL "):
+        # Syntax: UNTIL condition|command_if_true
+        parts = data[6:].split("|")
+        condition = parts[0].strip()
+        command_if_true = parts[1].strip() if len(parts) > 1 else None
+
+        # Replace placeholder if needed
+        if placeholders and condition.startswith("{") and condition.endswith("}"):
+            key = condition[1:-1]
+            condition = placeholders.get(key, condition)
+
+        max_wait = 60  # max wait time in seconds
+        waited = 0
+        while True:
+            try:
+                result = eval(condition)
+                if result:
+                    if command_if_true and command_if_true.upper() != "NOTHING":
+                        execute(command_if_true, placeholders, driver, conn)
+                    break
+                else:
+                    time.sleep(0.5)
+                    waited += 0.5
+                    if waited >= max_wait:
+                        conn.send(b"ERROR: UNTIL timeout\n")
+                        break
+            except Exception as e:
+                conn.send(f"ERROR: {str(e)}\n".encode())
+                break
 
     # SET command
     elif data.startswith("SET "):

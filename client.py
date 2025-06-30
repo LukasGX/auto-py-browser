@@ -1,9 +1,33 @@
 import socket
+from colorama import init, Fore, Style
+import re
 
 # Connect to HP socket server
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect(('localhost', 9000))
 
+colorama_map = {
+    "Fore.BLACK": Fore.BLACK,
+    "Fore.RED": Fore.RED,
+    "Fore.GREEN": Fore.GREEN,
+    "Fore.YELLOW": Fore.YELLOW,
+    "Fore.BLUE": Fore.BLUE,
+    "Fore.MAGENTA": Fore.MAGENTA,
+    "Fore.CYAN": Fore.CYAN,
+    "Fore.WHITE": Fore.WHITE,
+    "Fore.RESET": Fore.RESET,
+    "Style.BRIGHT": Style.BRIGHT,
+    "Style.NORMAL": Style.NORMAL,
+    "Style.RESET_ALL": Style.RESET_ALL
+}
+
+def colorama_replace(text):
+    def repl(match):
+        code = match.group(1)
+        return colorama_map.get(code, "")
+    return re.sub(r'c\[(.*?)\]', repl, text)
+
+init()
 print("Welcome to Auto PY Browser!")
 
 while True:
@@ -19,10 +43,10 @@ while True:
             if line.strip() == "AUTO_DONE":
                 print("=== AUTO block done ===")
                 break
-            print(line.strip())
+            print(colorama_replace(line.strip()))
     else:
         # Normal Response
-        print("Response: ", response.strip())
+        print("Response: ", colorama_replace(response.strip()))
 
 client.close()
 print("SP Closed.")
