@@ -2,4 +2,4 @@ GET https://google.com
 CLICK cl QS5gu sy4vM
 FILL cl gLFyf | {search}
 SEND cl gLFyf
-CONDITION True==True
+CONDITION driver.current_url.startswith("https://www.google.com/sorry") | PRINT Sorry, you'll have to solve the captcha | NOTHING

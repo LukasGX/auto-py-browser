@@ -188,7 +188,7 @@ def execute(data, placeholders, driver, conn):
                 for cmd in commands:
                     cmd = cmd.strip()
                     if cmd:
-                        conn.send(f"Executing: {cmd}\n".encode())
+                        # conn.send(f"Executing: {cmd}\n".encode())
                         should_quit = execute(cmd, auto_placeholders, driver, conn)
                         if should_quit:
                             conn.send(b"AUTO_DONE\n")
@@ -205,12 +205,18 @@ def execute(data, placeholders, driver, conn):
         if placeholders and message.startswith("{") and message.endswith("}"):
             key = message[1:-1]
             message = placeholders.get(key, message)
-        conn.send(f"PRINT: {message}\n".encode())
-        conn.send(b"OK\n")
+        conn.send(f"{message}\n".encode())
 
     # CONDITION command
     elif data.startswith("CONDITION "):
-        condition = data[10:].strip()
+        # Remove "CONDITION " and split by '|'
+        parts = data[10:].split("|")
+        # Strip whitespace from all parts
+        parts = [part.strip() for part in parts]
+        condition = parts[0]
+        command_if_true = parts[1] if len(parts) > 1 else None
+        command_if_false = parts[2] if len(parts) > 2 else None
+
         # Replace placeholder if needed
         if placeholders and condition.startswith("{") and condition.endswith("}"):
             key = condition[1:-1]
@@ -219,11 +225,21 @@ def execute(data, placeholders, driver, conn):
         try:
             result = eval(condition)
             if result:
-                conn.send(b"CONDITION is TRUE\n")
+                # conn.send(b"CONDITION is TRUE\n")
+                if command_if_true and command_if_true.upper() != "NOTHING":
+                    # Execute the command for True
+                    execute(command_if_true, placeholders, driver, conn)
             else:
-                conn.send(b"CONDITION is FALSE\n")
+                # conn.send(b"CONDITION is FALSE\n")
+                if command_if_false and command_if_false.upper() != "NOTHING":
+                    # Execute the command for False
+                    execute(command_if_false, placeholders, driver, conn)
         except Exception as e:
             conn.send(f"ERROR: {str(e)}\n".encode())
+
+    # NOTHING command
+    elif data.startswith("NOTHING"):
+        conn.send(b"OK\n")
 
     # QUIT command
     elif data == "QUIT":
