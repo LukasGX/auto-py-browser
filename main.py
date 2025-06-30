@@ -1,25 +1,34 @@
 import socket
 import subprocess
 import re
+from time import sleep
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 # import chrome
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 # import firefox
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from webdriver_manager.firefox import GeckoDriverManager
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 
 # Ask user for browser choice
 browser_choice = input("Which do you want to use? (1) Chrome (2) Firefox: ")
 if browser_choice == "1":
     # Start Chrome browser using WebDriver Manager
+    chrome_options = ChromeOptions()
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
     chrome_service = ChromeService(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=chrome_service)
+    driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
 if browser_choice == "2":
     # Start Firefox browser using WebDriver Manager
     firefox_service = FirefoxService(GeckoDriverManager().install())
     driver = webdriver.Firefox(service=firefox_service)
+
+actions = ActionChains(driver)
 
 driver.get("https://www.example.com")
 
@@ -65,6 +74,7 @@ def execute(data, placeholders, driver, conn):
                 element_id = placeholders.get(key, element_id)
             try:
                 element = driver.find_element("id", element_id)
+                actions.move_to_element(element).perform()
                 element.click()
                 conn.send(b"OK\n")
             except Exception as e:
@@ -79,6 +89,7 @@ def execute(data, placeholders, driver, conn):
             css_selector = "." + ".".join(class_names_list)
             try:
                 element = driver.find_element("css selector", css_selector)
+                actions.move_to_element(element).perform()
                 element.click()
                 conn.send(b"OK\n")
             except Exception as e:
@@ -112,6 +123,8 @@ def execute(data, placeholders, driver, conn):
         if element_select_with == "id ":
             try:
                 element = driver.find_element("id", class_or_id)
+                actions.move_to_element(element).perform()
+                element.click()
                 element.clear()
                 element.send_keys(text_to_fill)
                 conn.send(b"OK\n")
@@ -122,6 +135,8 @@ def execute(data, placeholders, driver, conn):
             css_selector = "." + ".".join(class_names_list)
             try:
                 element = driver.find_element("css selector", css_selector)
+                actions.move_to_element(element).perform()
+                element.click()
                 element.clear()
                 element.send_keys(text_to_fill)
                 conn.send(b"OK\n")
@@ -193,6 +208,7 @@ def execute(data, placeholders, driver, conn):
                         if should_quit:
                             conn.send(b"AUTO_DONE\n")
                             return True
+                        sleep(0.3)
             # Signal end of AUTO block
             conn.send(b"AUTO_DONE\n")
         except Exception as e:
@@ -201,10 +217,12 @@ def execute(data, placeholders, driver, conn):
     # PRINT command
     elif data.startswith("PRINT "):
         message = data[6:].strip()
-        # Replace placeholder if needed
-        if placeholders and message.startswith("{") and message.endswith("}"):
-            key = message[1:-1]
-            message = placeholders.get(key, message)
+        # Replace all placeholders in the message
+        def replace_placeholder(match):
+            key = match.group(1)
+            return str(placeholders.get(key, f"{{{key}}}"))
+        # Replace every {key} by its value in placeholders
+        message = re.sub(r"\{(\w+)\}", replace_placeholder, message)
         conn.send(f"{message}\n".encode())
 
     # CONDITION command
@@ -241,6 +259,73 @@ def execute(data, placeholders, driver, conn):
     elif data.startswith("NOTHING"):
         conn.send(b"OK\n")
 
+    # COOKIES command
+    elif data.startswith("COOKIES "):
+        action = data[8:].strip().upper()
+        if action == "GET":
+            cookies = driver.get_cookies()
+            conn.send(f"COOKIES: {cookies}\n".encode())
+        elif action == "DEL":
+            driver.delete_all_cookies()
+            conn.send(b"OK\n")
+        else:
+            conn.send(b"ERROR: Invalid COOKIES command\n")
+    
+    # URL command
+    elif data.startswith("URL"):
+        url = driver.current_url
+        conn.send(f"URL: {url}\n".encode())
+
+    # TITLE command
+    elif data.startswith("TITLE"):
+        title = driver.title
+        conn.send(f"TITLE: {title}\n".encode())
+
+    # SCREENSHOT command
+    elif data.startswith("SCREENSHOT"):
+        filename = data[10:].strip()
+        if not filename:
+            filename = "screenshot.png"
+        try:
+            driver.save_screenshot(filename)
+            conn.send(f"Screenshot saved as {filename}\n".encode())
+        except Exception as e:
+            conn.send(f"ERROR: {str(e)}\n".encode())
+
+    # META command
+    elif data.startswith("META"):
+        meta_name = data[4:].strip()
+        try:
+            meta_element = driver.find_element("xpath", f"//meta[@name='{meta_name}']")
+            content = meta_element.get_attribute("content")
+            conn.send(f"META {meta_name}: {content}\n".encode())
+        except Exception as e:
+            conn.send(f"ERROR: {str(e)}\n".encode())
+
+    # WAIT command
+    elif data.startswith("WAIT "):
+        try:
+            seconds = int(data[5:].strip())
+            sleep(seconds)
+            driver.implicitly_wait(seconds)
+            conn.send(b"OK\n")
+        except ValueError:
+            conn.send(b"ERROR: Invalid WAIT command, must be an integer\n")
+
+    # SET command
+    elif data.startswith("SET "):
+        # Syntax: SET key=value
+        key_value = data[4:].strip()
+        if "=" in key_value:
+            key, value = key_value.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            
+            placeholders[key] = value
+            conn.send(b"OK\n")
+        else:
+            conn.send(b"ERROR: Invalid SET command, must be in the form key=value\n")
+
     # QUIT command
     elif data == "QUIT":
         return True
@@ -249,12 +334,14 @@ def execute(data, placeholders, driver, conn):
     else:
         conn.send(b"ERROR: Unknown command\n")
 
+placeholders = {}
+
 while True:
     data = conn.recv(1024).decode()
     if not data:
         continue
     else:
-        if execute(data, False, driver, conn):
+        if execute(data, placeholders, driver, conn):
             break
     
 conn.close()
