@@ -2,6 +2,7 @@ import socket
 import subprocess
 import re
 import time
+import os
 from colorama import init, Fore
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -359,6 +360,30 @@ def execute(data, placeholders, driver, conn):
         else:
             conn.send(b"ERROR: Invalid SET command, must be in the form key=value\n")
 
+    # EXECUTE command
+    elif data.startswith("EXECUTE "):
+        # Syntax: EXECUTE_JS <js_code>
+        js_code = data[8:].strip()
+        try:
+            # Execute JavaScript in the current browser tab
+            result = driver.execute_script(js_code)
+            # Send result (if any) back to client
+            if result is not None:
+                conn.send(f"{result}\n".encode())
+            else:
+                conn.send(b"OK\n")
+        except Exception as e:
+            conn.send(f"ERROR: {str(e)}\n".encode())
+
+    # OS command
+    elif data.startswith("OS "):
+        # Syntax: OS <command>
+        os_command = data[3:].strip()
+        try:
+            conn.send(f"PROCEED {os_command}".encode())
+        except Exception as e:
+            conn.send(f"ERROR: {str(e)}\n".encode())
+
     # QUIT command
     elif data == "QUIT":
         return True
@@ -374,7 +399,7 @@ while True:
     if not data:
         continue
     else:
-        if execute(data, placeholders, driver, conn):
+        if execute(data, placeholders, driver, conn) == True:
             break
     
 conn.close()

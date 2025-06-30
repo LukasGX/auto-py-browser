@@ -1,6 +1,8 @@
 import socket
 from colorama import init, Fore, Style
+from tkinter import Tk, messagebox
 import re
+import os
 
 # Connect to HP socket server
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -27,6 +29,10 @@ def colorama_replace(text):
         return colorama_map.get(code, "")
     return re.sub(r'c\[(.*?)\]', repl, text)
 
+def ask_proceed(cmd):
+    Tk().withdraw()
+    return messagebox.askyesno("Confirm", f"You are trying to execute this OS command:\n\n{cmd}\n\nProceed?")
+
 init()
 print("Welcome to Auto PY Browser!")
 
@@ -36,6 +42,15 @@ while True:
     if user_command == "QUIT":
         break
     response = client.recv(1024).decode()
+
+    if response.strip().startswith("PROCEED"):
+        cmd = response[7:]
+        if ask_proceed(cmd):
+            os.system(cmd)
+        else:
+            print("Command execution cancelled")
+        continue
+
     if response.strip() == "AUTO_START":
         print("=== AUTO block starts ===")
         while True:
