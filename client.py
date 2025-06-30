@@ -4,8 +4,10 @@ import socket
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect(('localhost', 9000))
 
+print("Welcome to Auto PY Browser!")
+
 while True:
-    user_command = input("Your command (e.g. GET https://... or QUIT): ")
+    user_command = input("Command: ")
     client.send(user_command.encode())
     if user_command == "QUIT":
         break
