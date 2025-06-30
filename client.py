@@ -10,7 +10,17 @@ while True:
     if user_command == "QUIT":
         break
     response = client.recv(1024).decode()
-    print("Response:", response.strip())
+    if response.strip() == "AUTO_START":
+        print("=== AUTO block starts ===")
+        while True:
+            line = client.recv(1024).decode()
+            if line.strip() == "AUTO_DONE":
+                print("=== AUTO block done ===")
+                break
+            print(line.strip())
+    else:
+        # Normal Response
+        print("Response: ", response.strip())
 
 client.close()
 print("SP Closed.")

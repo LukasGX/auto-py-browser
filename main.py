@@ -181,15 +181,47 @@ def execute(data, placeholders, driver, conn):
                 k, v = opt.split("=", 1)
                 auto_placeholders[k.strip()] = v.strip()
         try:
+            # Signal start of AUTO block
+            conn.send(b"AUTO_START\n")
             with open(filename, "r", encoding="utf-8") as file:
                 commands = file.readlines()
                 for cmd in commands:
                     cmd = cmd.strip()
                     if cmd:
+                        conn.send(f"Executing: {cmd}\n".encode())
                         should_quit = execute(cmd, auto_placeholders, driver, conn)
                         if should_quit:
+                            conn.send(b"AUTO_DONE\n")
                             return True
-            conn.send(b"OK\n")
+            # Signal end of AUTO block
+            conn.send(b"AUTO_DONE\n")
+        except Exception as e:
+            conn.send(f"ERROR: {str(e)}\n".encode())
+
+    # PRINT command
+    elif data.startswith("PRINT "):
+        message = data[6:].strip()
+        # Replace placeholder if needed
+        if placeholders and message.startswith("{") and message.endswith("}"):
+            key = message[1:-1]
+            message = placeholders.get(key, message)
+        conn.send(f"PRINT: {message}\n".encode())
+        conn.send(b"OK\n")
+
+    # CONDITION command
+    elif data.startswith("CONDITION "):
+        condition = data[10:].strip()
+        # Replace placeholder if needed
+        if placeholders and condition.startswith("{") and condition.endswith("}"):
+            key = condition[1:-1]
+            condition = placeholders.get(key, condition)
+        # Evaluate the condition
+        try:
+            result = eval(condition)
+            if result:
+                conn.send(b"CONDITION is TRUE\n")
+            else:
+                conn.send(b"CONDITION is FALSE\n")
         except Exception as e:
             conn.send(f"ERROR: {str(e)}\n".encode())
 
