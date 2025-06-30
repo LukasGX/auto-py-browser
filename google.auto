@@ -1,0 +1,4 @@
+GET https://google.com
+CLICK cl QS5gu sy4vM
+FILL cl gLFyf | {search}
+SEND cl gLFyf
