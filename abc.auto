@@ -1,0 +1,3 @@
+GET https://wikipedia.org
+OS mkdir leckeier
+OS echo Your Mum > leckeier/text.txt

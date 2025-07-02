@@ -17,7 +17,10 @@ from webdriver_manager.firefox import GeckoDriverManager
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 
 # Ask user for browser choice
-browser_choice = input("Which do you want to use? (1) Chrome (2) Firefox: ")
+print("Which browser do you want to use?")
+print("1) Chrome")
+print("2) Firefox")
+browser_choice = input("Your Choice: ")
 if browser_choice == "1":
     # Start Chrome browser using WebDriver Manager
     chrome_options = ChromeOptions()

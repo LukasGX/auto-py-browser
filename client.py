@@ -58,6 +58,13 @@ while True:
             if line.strip() == "AUTO_DONE":
                 print("=== AUTO block done ===")
                 break
+            if line.strip().startswith("PROCEED"):
+                cmd = line[7:]
+                if ask_proceed(cmd):
+                    os.system(cmd)
+                else:
+                    print("Command execution cancelled")
+                continue
             print(colorama_replace(line.strip()))
     else:
         # Normal Response
