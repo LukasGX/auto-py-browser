@@ -1,0 +1,9 @@
+GET https://youtube.com
+UNTIL re.search(r"watch\?v=(.*)$", driver.current_url) | SET url=[driver.current_url]
+GET https://transkriptor.com/de/youtube-video-downloader/
+FILL id mediaLink {url}
+CLICK ct Video herunterladen
+WAIT 1
+CLICK cs button[CONTENT=Herunterladen]:not(btn-tryit)
+SWITCHTAB LAST
+DOWNLOAD cs video

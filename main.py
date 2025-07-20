@@ -3,6 +3,8 @@ import subprocess
 import re
 import time
 import os
+import requests
+import mimetypes
 from colorama import init, Fore
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -74,7 +76,7 @@ def execute(data, placeholders, driver, conn):
         element_select_with = data[6:9]
         if element_select_with == "id ":
             element_id = data[9:].strip()
-            # Replace placeholder if needed
+            # Platzhalter-Ersatz
             if placeholders and element_id.startswith("{") and element_id.endswith("}"):
                 key = element_id[1:-1]
                 element_id = placeholders.get(key, element_id)
@@ -87,7 +89,7 @@ def execute(data, placeholders, driver, conn):
                 conn.send(f"ERROR: {str(e)}\n".encode())
         elif element_select_with == "cl ":
             class_names = data[9:].strip()
-            # Replace placeholder if needed
+            # Platzhalter-Ersatz
             if placeholders and class_names.startswith("{") and class_names.endswith("}"):
                 key = class_names[1:-1]
                 class_names = placeholders.get(key, class_names)
@@ -98,6 +100,77 @@ def execute(data, placeholders, driver, conn):
                 actions.move_to_element(element).perform()
                 element.click()
                 conn.send(b"OK\n")
+            except Exception as e:
+                conn.send(f"ERROR: {str(e)}\n".encode())
+        elif element_select_with == "cs ":
+            css = data[9:].strip()
+            if placeholders and css.startswith("{") and css.endswith("}"):
+                key = css[1:-1]
+                css = placeholders.get(key, css)
+
+            # Erweiterter SPECIAL-[CONTENT=...] Support (auch mit :not(KLASSE))
+            m = re.match(r'^([^\[]+)\[CONTENT=([^\]]+)\](?::not\(([^)]+)\))?$', css)
+            if m:
+                tag = m.group(1).strip()
+                expected_content = m.group(2).strip()
+                excluded_class = m.group(3).strip() if m.group(3) else None
+                try:
+                    elements = driver.find_elements("css selector", tag)
+                    for e in elements:
+                        if e.text.strip() == expected_content.strip():  # alternativ .lower(), siehe oben
+                            if excluded_class and excluded_class in e.get_attribute("class").split():
+                                continue
+                            actions.move_to_element(e).perform()
+                            e.click()
+                            conn.send(b"OK\n")
+                            return
+                    conn.send(b"ERROR: No element with this content for selector\n")
+                except Exception as e:
+                    conn.send(f"ERROR: {str(e)}\n".encode())
+            else:
+                # Normale CSS-Selektorverwendung
+                try:
+                    element = driver.find_element("css selector", css)
+                    actions.move_to_element(element).perform()
+                    element.click()
+                    conn.send(b"OK\n")
+                except Exception as e:
+                    conn.send(f"ERROR: {str(e)}\n".encode())
+
+        # NEU: Content-exakt (ct)
+        elif element_select_with == "ct ":
+            content_text = data[9:].strip()
+            # Placeholder-Ersatz
+            if placeholders and content_text.startswith("{") and content_text.endswith("}"):
+                key = content_text[1:-1]
+                content_text = placeholders.get(key, content_text)
+            try:
+                # Alle sichtbaren Elemente holen und vergleichen
+                elements = driver.find_elements("xpath", "//*[text()]")
+                element = next(e for e in elements if e.text == content_text)
+                actions.move_to_element(element).perform()
+                element.click()
+                conn.send(b"OK\n")
+            except StopIteration:
+                conn.send(b"ERROR: No element with this exact content\n")
+            except Exception as e:
+                conn.send(f"ERROR: {str(e)}\n".encode())
+        # NEU: Regex-Text (rt)
+        elif element_select_with == "rt ":
+            pattern = data[9:].strip()
+            # Placeholder-Ersatz
+            if placeholders and pattern.startswith("{") and pattern.endswith("}"):
+                key = pattern[1:-1]
+                pattern = placeholders.get(key, pattern)
+            try:
+                # XPath: Nur sichtbare Elemente mit Text (du kannst es anpassen)
+                elements = driver.find_elements("xpath", "//*[text()]")
+                element = next(e for e in elements if re.search(pattern, e.text))
+                actions.move_to_element(element).perform()
+                element.click()
+                conn.send(b"OK\n")
+            except StopIteration:
+                conn.send(b"ERROR: No element matching regex found\n")
             except Exception as e:
                 conn.send(f"ERROR: {str(e)}\n".encode())
         else:
@@ -247,7 +320,8 @@ def execute(data, placeholders, driver, conn):
             condition = placeholders.get(key, condition)
         # Evaluate the condition
         try:
-            result = eval(condition)
+            context = {'driver': driver, 're': re, 'placeholders': placeholders}
+            result = eval(condition, globals(), context)
             if result:
                 # conn.send(b"CONDITION is TRUE\n")
                 if command_if_true and command_if_true.upper() != "NOTHING":
@@ -330,11 +404,12 @@ def execute(data, placeholders, driver, conn):
             key = condition[1:-1]
             condition = placeholders.get(key, condition)
 
-        max_wait = 60  # max wait time in seconds
+        max_wait = 180  # max wait time in seconds
         waited = 0
         while True:
             try:
-                result = eval(condition)
+                context = {'driver': driver, 're': re, 'placeholders': placeholders}
+                result = eval(condition, globals(), context)
                 if result:
                     if command_if_true and command_if_true.upper() != "NOTHING":
                         execute(command_if_true, placeholders, driver, conn)
@@ -344,7 +419,7 @@ def execute(data, placeholders, driver, conn):
                     waited += 0.5
                     if waited >= max_wait:
                         conn.send(b"ERROR: UNTIL timeout\n")
-                        break
+                        return True
             except Exception as e:
                 conn.send(f"ERROR: {str(e)}\n".encode())
                 break
@@ -358,6 +433,19 @@ def execute(data, placeholders, driver, conn):
             key = key.strip()
             value = value.strip()
             
+            # --- NEU: []-Ausdruck auswerten! ---
+            # Falls value z.B. "[driver.current_url]" ist
+            if value.startswith("[") and value.endswith("]"):
+                eval_expr = value[1:-1]
+                context = {'driver': driver, 're': re, 'placeholders': placeholders}
+                try:
+                    value_evaluated = str(eval(eval_expr, globals(), context))
+                except Exception as e:
+                    conn.send(f"ERROR: SET-EVAL: {str(e)}\n".encode())
+                    return
+                value = value_evaluated
+            # --- ENDE NEU ---
+
             placeholders[key] = value
             conn.send(b"OK\n")
         else:
@@ -384,6 +472,104 @@ def execute(data, placeholders, driver, conn):
         os_command = data[3:].strip()
         try:
             conn.send(f"PROCEED {os_command}".encode())
+        except Exception as e:
+            conn.send(f"ERROR: {str(e)}\n".encode())
+
+    elif data.startswith("DOWNLOAD "):
+        element_select_with = data[9:12]
+        selector_value = data[12:].strip()
+        # Platzhalter-Ersatz
+        if placeholders and selector_value.startswith("{") and selector_value.endswith("}"):
+            key = selector_value[1:-1]
+            selector_value = placeholders.get(key, selector_value)
+        element = None
+        url = None
+
+        try:
+            # 1. Element finden (wie bei CLICK)
+            if element_select_with == "id ":
+                element = driver.find_element("id", selector_value)
+            elif element_select_with == "cl ":
+                class_names = selector_value.strip().split()
+                css_selector = "." + ".".join(class_names)
+                element = driver.find_element("css selector", css_selector)
+            elif element_select_with == "cs ":
+                element = driver.find_element("css selector", selector_value)
+            elif element_select_with == "ct ":
+                elements = driver.find_elements("xpath", "//*[text()]")
+                element = next(e for e in elements if e.text.strip() == selector_value.strip())
+            elif element_select_with == "rt ":
+                pattern = selector_value
+                elements = driver.find_elements("xpath", "//*[text()]")
+                element = next(e for e in elements if re.search(pattern, e.text))
+            else:
+                conn.send(b"ERROR: Invalid element selector\n")
+                return
+
+            # 2. Downloadbare URL bestimmen
+            tag = element.tag_name.lower()
+            if tag == "a":
+                url = element.get_attribute("href")
+            elif tag == "img":
+                url = element.get_attribute("src")
+            elif tag == "video" or tag == "audio":
+                url = element.get_attribute("src")
+                if not url:
+                    sources = element.find_elements("tag name", "source")
+                    for source in sources:
+                        test_url = source.get_attribute("src")
+                        if test_url:
+                            url = test_url
+                            break
+            else:
+                # Generischer Versuch
+                url = element.get_attribute("href") or element.get_attribute("src")
+
+            if not url:
+                conn.send(b"ERROR: No downloadable URL found in element (href/src missing)\n")
+                return
+
+            # 3. Download durchführen
+            r = requests.get(url, stream=True)
+            content_type = r.headers.get('Content-Type', '')
+            ext = mimetypes.guess_extension(content_type.split(";")[0].strip())
+            filename = url.split("/")[-1].split("?")[0]
+            if not filename or "." not in filename:
+                filename = "downloaded_file"
+            if ext and not filename.endswith(ext):
+                filename += ext
+
+            # Neuer Block: Prüfe auf {video_name} im Placeholder
+            video_name_from_placeholder = placeholders.get("video_name") if placeholders else None
+            dest_filename = video_name_from_placeholder or filename
+
+            with open(dest_filename, "wb") as f:
+                for chunk in r.iter_content(8192):
+                    if chunk:
+                        f.write(chunk)
+            conn.send(f"Downloaded: {dest_filename}\n".encode())
+
+        except StopIteration:
+            conn.send(b"ERROR: No matching element for selector\n")
+        except Exception as e:
+            conn.send(f"ERROR: {str(e)}\n".encode())
+
+    elif data.startswith("SWITCHTAB "):
+        which = data[10:].strip().upper()
+        try:
+            handles = driver.window_handles
+            if which == "LAST":
+                driver.switch_to.window(handles[-1])
+                conn.send(b"OK\n")
+            elif which == "FIRST":
+                driver.switch_to.window(handles[0])
+                conn.send(b"OK\n")
+            elif which.isdigit():  # z.B. SWITCHTAB 1
+                idx = int(which)
+                driver.switch_to.window(handles[idx])
+                conn.send(b"OK\n")
+            else:
+                conn.send(b"ERROR: Unknown SWITCHTAB argument\n")
         except Exception as e:
             conn.send(f"ERROR: {str(e)}\n".encode())
 
