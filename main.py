@@ -5,6 +5,7 @@ import time
 import os
 import requests
 import mimetypes
+import argparse
 from colorama import init, Fore
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -18,11 +19,26 @@ from selenium.webdriver.firefox.service import Service as FirefoxService
 from webdriver_manager.firefox import GeckoDriverManager
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 
-# Ask user for browser choice
-print("Which browser do you want to use?")
-print("1) Chrome")
-print("2) Firefox")
-browser_choice = input("Your Choice: ")
+# Argument parsing
+parser = argparse.ArgumentParser(description="Auto Browser Controller")
+group = parser.add_mutually_exclusive_group()
+group.add_argument("--chrome", action="store_true", help="Use Chrome browser")
+group.add_argument("--firefox", action="store_true", help="Use Firefox browser")
+
+args = parser.parse_args()
+
+if args.chrome:
+    browser_choice = "1"
+elif args.firefox:
+    browser_choice = "2"
+else:
+    # Ask user for browser choice
+    print("Which browser do you want to use?")
+    print("1) Chrome")
+    print("2) Firefox")
+    browser_choice = input("Your Choice: ")
+
+
 if browser_choice == "1":
     # Start Chrome browser using WebDriver Manager
     chrome_options = ChromeOptions()
@@ -46,6 +62,9 @@ sp_process = subprocess.Popen(
     ['python', 'client.py'],
     creationflags=subprocess.CREATE_NEW_CONSOLE
 )
+
+original_dir = os.getcwd()
+print(f"Original directory: {original_dir}")
 
 # Set up socket server for communication with SP
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -475,6 +494,28 @@ def execute(data, placeholders, driver, conn):
         except Exception as e:
             conn.send(f"ERROR: {str(e)}\n".encode())
 
+    # PATH command
+    elif data.startswith("PATH "):
+        # Syntax: PATH <path>
+        path = data[5:].strip()
+
+        if path == "RESET":
+            os.chdir(original_dir)
+            conn.send(f"Changed directory to: {os.getcwd()} (RESET)\n".encode())
+        else:
+            # Replace placeholder if needed
+            if placeholders and path.startswith("{") and path.endswith("}"):
+                key = path[1:-1]
+                path = placeholders.get(key, path)
+            try:
+                if os.path.exists(path):
+                    os.chdir(path)
+                    conn.send(f"Changed directory to: {os.getcwd()}\n".encode())
+                else:
+                    conn.send(f"PATH NOT FOUND: {path}\n".encode())
+            except Exception as e:
+                conn.send(f"ERROR: {str(e)}\n".encode())
+
     elif data.startswith("DOWNLOAD "):
         element_select_with = data[9:12]
         selector_value = data[12:].strip()
@@ -573,9 +614,158 @@ def execute(data, placeholders, driver, conn):
         except Exception as e:
             conn.send(f"ERROR: {str(e)}\n".encode())
 
+    # NEWTAB command
+    elif data.startswith("NEWTAB"):
+        try:
+            driver.execute_script("window.open('');")
+            conn.send(b"OK\nc[Fore.YELLOW]You have to switch to the new tab manually with SWITCHTAB!c[Fore.RESET]\n")
+        except Exception as e:
+            conn.send(f"ERROR: {str(e)}\n".encode())
+
+    # KILLTAB command
+    elif data.startswith("KILLTAB"):
+        try:
+            handles = driver.window_handles
+            if len(handles) > 1:
+                driver.close()
+                time.sleep(0.3)
+                driver.switch_to.window(handles[0])
+                conn.send(b"OK\n")
+            else:
+                conn.send(b"ERROR: Cannot close the last tab\n")
+        except Exception as e:
+            conn.send(f"ERROR: {str(e)}\n".encode())
+
     # QUIT command
     elif data == "QUIT":
         return True
+    
+    # HELP command
+    elif data == "HELP":
+        help_text = """
+c[Fore.CYAN]c[Style.BRIGHT]==== PY-AUTO-BROWSER - COMMAND OVERVIEW ====c[Style.NORMAL]
+== Navigation ==c[Fore.RESET]
+GET <url>
+    Opens the specified URL (e.g. https://example.com)
+
+BACK
+    Navigates back in browser history
+
+FORWARD
+    Navigates forward in browser history
+
+REFRESH
+    Reloads the current page
+
+c[Fore.CYAN]== Interaction ==c[Fore.RESET]
+CLICK id <id>
+CLICK cl <class names>
+CLICK cs <CSS selector>
+CLICK ct <exact visible text>
+CLICK rt <regex pattern>
+    Clicks the first visible element matching the specified method
+
+FILL id <id> <text>
+FILL cl <class> <text>
+    Fills an input field with the provided text
+
+SEND id <id>
+SEND cl <class>
+    Sends ENTER key to the element
+
+c[Fore.CYAN]== Downloads ==c[Fore.RESET]
+DOWNLOAD id <id>
+DOWNLOAD cl <classes>
+DOWNLOAD cs <CSS selector>
+DOWNLOAD ct <text>
+DOWNLOAD rt <regex>
+    Downloads linked content (e.g. video href/src). If {video_name} is set, it will be used as the filename.
+
+c[Fore.CYAN]== Scripting ==c[Fore.RESET]
+AUTO <filename.auto>[|key=value|...]
+    Executes each line of the script (.auto) file. Supports dynamic placeholders.
+
+WAIT <seconds>
+    Waits the given number of seconds and sets implicit wait
+
+CONDITION <expression>|<CommandIfTrue>|<CommandIfFalse>
+    Python-like IF-THEN-ELSE condition that executes depending on expression
+
+UNTIL <expression>|<command>
+    Repeats every 0.5s until condition is True (max 180s), then executes the command
+
+NOTHING
+    Used when no command should run in CONDITION or UNTIL
+
+c[Fore.CYAN]== Placeholder Management ==c[Fore.RESET]
+SET key=value
+    Stores a dynamic variable (e.g. SET url=https://example.com)
+
+    Supports evaluated expressions like:
+        SET current_url=[driver.current_url]
+
+PRINT <string with {placeholder}>
+    Sends a message to the client, with placeholders replaced
+
+c[Fore.CYAN]== Browser Tabs ==c[Fore.RESET]
+SWITCHTAB LAST
+SWITCHTAB FIRST
+SWITCHTAB <index>
+    Switches to the selected browser tab
+
+NEWTAB
+    Opens a new browser tab
+
+KILLTAB
+    Closes the current browser tab and switches to the first tab
+
+c[Fore.CYAN]== Page Info ==c[Fore.RESET]
+TITLE
+    Returns the current page title
+
+URL
+    Returns the current page URL
+
+META <meta-name>
+    Returns the value of <meta name="..."> content attribute
+
+COOKIES GET
+COOKIES DEL
+    Gets or deletes all website cookies
+
+c[Fore.CYAN]== Files & Screenshots ==c[Fore.RESET]
+SCREENSHOT <filename>
+    Saves a screenshot of the current view
+    (Default: "screenshot.png")
+
+PATH <directory>
+PATH RESET
+    Changes (or resets) the current working directory
+
+c[Fore.CYAN]== JavaScript and OS Commands ==c[Fore.RESET]
+EXECUTE <js-code>
+    Executes JavaScript in the webpage context
+
+OS <command>
+    Sends a system shell command (confirmation only)
+
+c[Fore.CYAN]== System ==c[Fore.RESET]
+QUIT
+    Cleanly closes all connections and exits the program
+
+HELP
+    Displays this help overview
+
+        """
+        conn.send(b"HELP_START\n")
+        chunk_size = 800
+        chunks = [help_text[i:i+chunk_size] for i in range(0, len(help_text), chunk_size)]
+
+        for chunk in chunks:
+            conn.send(chunk.encode())
+            time.sleep(0.02)
+
+        conn.send(b"HELP_DONE\n")
 
     # Unknown command
     else:

@@ -5,5 +5,7 @@ FILL id mediaLink {url}
 CLICK ct Video herunterladen
 WAIT 1
 CLICK cs button[CONTENT=Herunterladen]:not(btn-tryit)
+PATH {video_path}
 SWITCHTAB LAST
 DOWNLOAD cs video
+PATH RESET
