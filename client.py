@@ -99,11 +99,17 @@ while True:
             print(colorama_replace(line.strip()))
     elif response.strip() == "HELP_START":
         while True:
-            help_chunk = client.recv(1024).decode()
-            if help_chunk.strip() == "HELP_DONE":
+            chunk = client.recv(1024).decode()
+            if chunk.strip() == "HELP_DONE":
                 print("=== HELP block done ===")
                 break
-            print(colorama_replace(help_chunk.strip()))
+            print(colorama_replace(chunk.strip()))
+    elif response.strip() == "MORELINE_START":
+        while True:
+            chunk = client.recv(1024).decode()
+            if chunk.strip() == "MORELINE_DONE":
+                break
+            print(colorama_replace(chunk.strip()))
     else:
         # Normal Response
         print(colorama_replace(response.strip()))

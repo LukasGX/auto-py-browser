@@ -1,0 +1,8 @@
+plugin:
+  name: "SearchPlugin"
+  version: "1.0.0"
+  author: "LukasGX"
+  description: "Search with several search engines"
+  commands:
+    - name: "SEARCH"
+      ref: "search"

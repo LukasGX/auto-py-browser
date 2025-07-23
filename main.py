@@ -6,6 +6,7 @@ import os
 import requests
 import mimetypes
 import argparse
+import plugins
 from colorama import init, Fore
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -74,6 +75,8 @@ print("Waiting for SP to connect...")
 
 conn, addr = server.accept()
 print("SP connected.")
+
+plugin_commands = plugins.list_plugin_commands()
 
 def execute(data, placeholders, driver, conn):
     """
@@ -766,6 +769,15 @@ HELP
             time.sleep(0.02)
 
         conn.send(b"HELP_DONE\n")
+
+    # Plugin commands
+    elif data.split(" ")[0] in plugin_commands:
+        splitt = data.split(" ")
+
+        conn.send(b"MORELINE_START")
+        command_ref = plugin_commands[splitt[0]]
+        plugins.execute_plugin_command(data, command_ref, driver, conn, placeholders)
+        conn.send(b"MORELINE_DONE")
 
     # Unknown command
     else:
