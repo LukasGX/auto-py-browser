@@ -34,7 +34,11 @@ def process_config(file_path, plugin_commands):
                 for cmd in commands:
                     command_name = cmd.get("name", "Unnamed")
                     command_ref = cmd.get("ref", "undefined")
-                    plugin_commands[command_name] = os.path.join(os.path.dirname(file_path), command_ref)
+                    # Store a small dict with plugin directory and the function/reference name
+                    plugin_commands[command_name] = {
+                        'dir': os.path.dirname(file_path),
+                        'func': command_ref
+                    }
                 output = ", ".join(plugin_commands.keys())
             else:
                 output = "No commands defined"
@@ -76,19 +80,30 @@ def list_plugin_commands():
     return main()
 
 def execute_plugin_command(data, command_ref, driver, conn, placeholders):
-    command_ref_clean = os.path.dirname(command_ref)
+    # command_ref can be the new dict format {'dir':..., 'func':...}
+    # or the old string format (backwards compatibility)
+    if isinstance(command_ref, dict):
+        command_dir = command_ref.get('dir')
+        func_name = command_ref.get('func')
+    elif isinstance(command_ref, str):
+        # legacy: path/to/dir/<ref> was stored
+        command_dir = os.path.dirname(command_ref)
+        func_name = os.path.basename(command_ref)
+    else:
+        print("Invalid command_ref format for plugin")
+        return
 
-    module_name = os.path.basename(command_ref_clean)  # → "search"
-    init_path = os.path.join(command_ref_clean, "init.py")
+    module_name = os.path.basename(command_dir)  # e.g. "search"
+    init_path = os.path.join(command_dir, "init.py")
 
     spec = importlib.util.spec_from_file_location(module_name, init_path)
     plugin_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(plugin_module)
 
-    if hasattr(plugin_module, module_name):
-        getattr(plugin_module, module_name)(data, conn, driver, placeholders)
+    if hasattr(plugin_module, func_name):
+        getattr(plugin_module, func_name)(data, conn, driver, placeholders)
     else:
-        print(f"Function '{module_name}()' not found in plugin.")
+        print(f"Function '{func_name}()' not found in plugin '{module_name}'.")
 
 if __name__ == "__main__":
     main()

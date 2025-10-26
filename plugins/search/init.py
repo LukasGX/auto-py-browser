@@ -11,7 +11,7 @@ def nt(driver):
     driver.execute_script("window.open('');")
     driver.switch_to.window(driver.window_handles[-1])
 
-def search(data, conn, driver, placeholders):
+def searchy(data, conn, driver, placeholders):
     rest = data[7:8].strip()
     if rest.startswith("g"):
         driver.get("https://www.google.com/search?q=" + data[8:])

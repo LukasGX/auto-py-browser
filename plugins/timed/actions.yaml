@@ -1,0 +1,5 @@
+actions:
+    - signal: "sct"
+      action: "screenshot"
+    - signal: "scf"
+      action: "fullscreenshot"

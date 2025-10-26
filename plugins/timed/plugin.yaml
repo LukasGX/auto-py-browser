@@ -1,0 +1,8 @@
+plugin:
+    name: "TimedPlugin"
+    version: "1.0.0"
+    author: "LukasGX"
+    description: "Do timed actions"
+    commands:
+        - name: "TIMED"
+          ref: "timed"
